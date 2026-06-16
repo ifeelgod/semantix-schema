@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /checkout-success
+Disallow: /checkout-cancel
+
+Sitemap: https://schema.servicevale.com/sitemap.xml
