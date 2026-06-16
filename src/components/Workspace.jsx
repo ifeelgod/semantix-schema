@@ -42,17 +42,26 @@ export default function Workspace({ onNavigate }) {
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [checkoutTier, setCheckoutTier] = useState(null);
   const [checkoutState, setCheckoutState] = useState('selection');
+  const [selectedCheckoutTier, setSelectedCheckoutTier] = useState('5k');
   
   const fileInputRef = useRef(null);
 
   const selectedSchema = SUPPORTED_SCHEMAS[selectedSchemaKey];
 
-  // Load limit from localStorage on startup
+  // Load limit from localStorage and check for Stripe redirect session_id
   useEffect(() => {
     const savedLimit = localStorage.getItem('activeLimit');
     if (savedLimit) {
       const parsed = Number(savedLimit);
       setActiveLimit(isNaN(parsed) ? Infinity : parsed);
+    }
+
+    // Check for Stripe redirect session_id
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    
+    if (sessionId) {
+      verifyStripeSession(sessionId);
     }
   }, []);
 
@@ -334,6 +343,62 @@ export default function Workspace({ onNavigate }) {
       setActiveLimit(limitValue);
       localStorage.setItem('activeLimit', String(limitValue));
     }, 1500);
+  };
+
+  const handleStripeCheckout = async (tierName) => {
+    setCheckoutState('processing');
+    try {
+      const response = await fetch('/.netlify/functions/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tier: tierName,
+          successUrl: window.location.origin + window.location.pathname,
+          cancelUrl: window.location.href,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Failed to create Stripe checkout session.');
+        setCheckoutState('selection');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      alert('Failed to connect to Stripe serverless endpoint. Ensure you are running Netlify CLI or deployed on Netlify.');
+      setCheckoutState('selection');
+    }
+  };
+
+  const verifyStripeSession = async (sessionId) => {
+    setShowUnlockModal(true);
+    setCheckoutState('processing');
+    try {
+      const response = await fetch(`/.netlify/functions/verify-checkout?session_id=${sessionId}`);
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        setCheckoutTier(data.tier);
+        setCheckoutState('success');
+        setActiveLimit(data.limit);
+        localStorage.setItem('activeLimit', String(data.limit));
+        
+        // Remove session_id from URL bar to clean up
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } else {
+        alert('Stripe payment could not be verified.');
+        setCheckoutState('selection');
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      alert('Error verifying Stripe checkout session.');
+      setCheckoutState('selection');
+    }
   };
 
   // Basic highlight styling helper for JSON-LD keys and values
@@ -909,11 +974,12 @@ export default function Workspace({ onNavigate }) {
                 <div className="space-y-3 pt-2">
                   {/* 5k limit pass */}
                   <button
-                    onClick={() => {
-                      setCheckoutTier('5k');
-                      handleSimulateCheckout(5000);
-                    }}
-                    className="w-full flex items-center justify-between p-4 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-950 hover:border-blue-500 dark:hover:border-blue-500 text-left transition-all cursor-pointer group"
+                    onClick={() => setSelectedCheckoutTier('5k')}
+                    className={`w-full flex items-center justify-between p-4 rounded-lg text-left transition-all cursor-pointer group ${
+                      selectedCheckoutTier === '5k'
+                        ? 'border-2 border-blue-500 bg-blue-500/5 dark:bg-blue-500/10'
+                        : 'border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 hover:border-zinc-300 dark:hover:border-zinc-700'
+                    }`}
                   >
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Migration Token</h4>
@@ -927,11 +993,12 @@ export default function Workspace({ onNavigate }) {
 
                   {/* 10k limit pass */}
                   <button
-                    onClick={() => {
-                      setCheckoutTier('10k');
-                      handleSimulateCheckout(10000);
-                    }}
-                    className="w-full flex items-center justify-between p-4 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-950 hover:border-blue-500 dark:hover:border-blue-500 text-left transition-all cursor-pointer group"
+                    onClick={() => setSelectedCheckoutTier('10k')}
+                    className={`w-full flex items-center justify-between p-4 rounded-lg text-left transition-all cursor-pointer group ${
+                      selectedCheckoutTier === '10k'
+                        ? 'border-2 border-blue-500 bg-blue-500/5 dark:bg-blue-500/10'
+                        : 'border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 hover:border-zinc-300 dark:hover:border-zinc-700'
+                    }`}
                   >
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Migration Token</h4>
@@ -945,11 +1012,12 @@ export default function Workspace({ onNavigate }) {
 
                   {/* Agency Pass */}
                   <button
-                    onClick={() => {
-                      setCheckoutTier('agency');
-                      handleSimulateCheckout(Infinity);
-                    }}
-                    className="w-full flex items-center justify-between p-4 border-2 border-blue-500 rounded-lg bg-blue-500/5 hover:bg-blue-500/10 text-left transition-all cursor-pointer group"
+                    onClick={() => setSelectedCheckoutTier('agency')}
+                    className={`w-full flex items-center justify-between p-4 rounded-lg text-left transition-all cursor-pointer group ${
+                      selectedCheckoutTier === 'agency'
+                        ? 'border-2 border-blue-500 bg-blue-500/5 dark:bg-blue-500/10'
+                        : 'border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 hover:border-zinc-300 dark:hover:border-zinc-700'
+                    }`}
                   >
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-blue-500">Full Agency License</h4>
@@ -959,6 +1027,26 @@ export default function Workspace({ onNavigate }) {
                       <span className="text-lg font-bold text-blue-600 dark:text-blue-400">$499</span>
                       <p className="text-[9px] text-zinc-500">Billed annually</p>
                     </div>
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-4 border-t border-zinc-150 dark:border-zinc-800">
+                  <button
+                    onClick={() => handleStripeCheckout(selectedCheckoutTier)}
+                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/15 cursor-pointer hover:shadow-blue-500/25 active:scale-[0.98]"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Unlock via Stripe
+                  </button>
+                  <button
+                    onClick={() => {
+                      const limits = { '5k': 5000, '10k': 10000, 'agency': Infinity };
+                      setCheckoutTier(selectedCheckoutTier);
+                      handleSimulateCheckout(limits[selectedCheckoutTier]);
+                    }}
+                    className="w-full py-2.5 px-4 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold rounded-lg text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-zinc-200 dark:border-zinc-750 active:scale-[0.98]"
+                  >
+                    Simulate Success (Dev Sandbox)
                   </button>
                 </div>
               </div>
